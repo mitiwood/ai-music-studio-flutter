@@ -37,61 +37,90 @@ class _LoginView extends StatelessWidget {
     }
   }
 
+  Future<void> _handleGoogleLogin(BuildContext context) async {
+    final provider = context.read<AppProvider>();
+    final success = await provider.loginWithGoogle();
+    if (!success && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Google 로그인에 실패했습니다'),
+          backgroundColor: AppTheme.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 80,
-            height: 80,
-            decoration: const BoxDecoration(color: AppTheme.bg3, shape: BoxShape.circle),
-            child: const Center(child: Icon(Icons.person, size: 40, color: AppTheme.textTertiary)),
+    return Consumer<AppProvider>(
+      builder: (context, provider, _) {
+        if (provider.loginLoading) {
+          return const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: AppTheme.accent),
+                SizedBox(height: 16),
+                Text('로그인 중...', style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
+              ],
+            ),
+          );
+        }
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: const BoxDecoration(color: AppTheme.bg3, shape: BoxShape.circle),
+                child: const Center(child: Icon(Icons.person, size: 40, color: AppTheme.textTertiary)),
+              ),
+              const SizedBox(height: 16),
+              const Text('로그인이 필요합니다',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
+              const SizedBox(height: 8),
+              const Text('소셜 로그인으로 내 음악을 관리하세요',
+                  style: TextStyle(color: AppTheme.textTertiary, fontSize: 13)),
+              const SizedBox(height: 24),
+              _LoginButton(
+                icon: Icons.chat_bubble,
+                label: 'Naver로 로그인',
+                color: const Color(0xFF03C75A),
+                onTap: () => _launchLogin(context, AppConstants.authNaver),
+              ),
+              const SizedBox(height: 10),
+              _LoginButton(
+                icon: Icons.chat,
+                label: 'Kakao로 로그인',
+                color: const Color(0xFFFEE500),
+                textColor: Colors.black,
+                onTap: () => _launchLogin(context, AppConstants.authKakao),
+              ),
+              const SizedBox(height: 10),
+              _LoginButton(
+                icon: Icons.g_mobiledata,
+                label: 'Google로 로그인',
+                color: const Color(0xFFEA4335),
+                onTap: () => _handleGoogleLogin(context),
+              ),
+              const SizedBox(height: 24),
+              // Guest continue
+              TextButton(
+                onPressed: () {
+                  final provider = context.read<AppProvider>();
+                  provider.login(AppUser(
+                    name: '게스트',
+                    provider: 'guest',
+                  ));
+                },
+                child: const Text('게스트로 계속하기',
+                    style: TextStyle(color: AppTheme.textTertiary, fontSize: 13)),
+              ),
+            ]),
           ),
-          const SizedBox(height: 16),
-          const Text('로그인이 필요합니다',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary)),
-          const SizedBox(height: 8),
-          const Text('소셜 로그인으로 내 음악을 관리하세요',
-              style: TextStyle(color: AppTheme.textTertiary, fontSize: 13)),
-          const SizedBox(height: 24),
-          _LoginButton(
-            icon: Icons.chat_bubble,
-            label: 'Naver로 로그인',
-            color: const Color(0xFF03C75A),
-            onTap: () => _launchLogin(context, AppConstants.authNaver),
-          ),
-          const SizedBox(height: 10),
-          _LoginButton(
-            icon: Icons.chat,
-            label: 'Kakao로 로그인',
-            color: const Color(0xFFFEE500),
-            textColor: Colors.black,
-            onTap: () => _launchLogin(context, AppConstants.authKakao),
-          ),
-          const SizedBox(height: 10),
-          _LoginButton(
-            icon: Icons.g_mobiledata,
-            label: 'Google로 로그인',
-            color: const Color(0xFFEA4335),
-            onTap: () => _launchLogin(context, AppConstants.authGoogle),
-          ),
-          const SizedBox(height: 24),
-          // Guest continue
-          TextButton(
-            onPressed: () {
-              final provider = context.read<AppProvider>();
-              provider.login(AppUser(
-                name: '게스트',
-                provider: 'guest',
-              ));
-            },
-            child: const Text('게스트로 계속하기',
-                style: TextStyle(color: AppTheme.textTertiary, fontSize: 13)),
-          ),
-        ]),
-      ),
+        );
+      },
     );
   }
 }

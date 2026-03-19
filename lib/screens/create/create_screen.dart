@@ -4,6 +4,7 @@ import '../../config/theme.dart';
 import '../../providers/app_provider.dart';
 import 'simple_create_screen.dart';
 import 'custom_create_screen.dart';
+import '../payment/payment_screen.dart';
 
 class CreateScreen extends StatelessWidget {
   const CreateScreen({super.key});
@@ -64,18 +65,33 @@ class CreateScreen extends StatelessWidget {
                           ],
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: AppTheme.accent.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
+                      GestureDetector(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const PaymentScreen()),
                         ),
-                        child: Text(
-                          provider.currentUser?.plan.toUpperCase() ?? 'FREE',
-                          style: const TextStyle(
-                            color: AppTheme.accent,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [AppTheme.accent, AppTheme.accent2],
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.add, size: 14, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text(
+                                '크레딧 충전',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),

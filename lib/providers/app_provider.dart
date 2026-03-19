@@ -6,6 +6,7 @@ import '../config/constants.dart';
 import '../models/track.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../services/audio_service.dart';
 
 class AppProvider extends ChangeNotifier {
@@ -15,6 +16,7 @@ class AppProvider extends ChangeNotifier {
   bool _tracksLoading = false;
   bool _myTracksLoading = false;
   bool _generating = false;
+  bool _loginLoading = false;
   String? _selectedGenre;
   Track? _currentPlayingTrack;
   Map<String, dynamic>? _announcement;
@@ -28,6 +30,7 @@ class AppProvider extends ChangeNotifier {
   bool get tracksLoading => _tracksLoading;
   bool get myTracksLoading => _myTracksLoading;
   bool get generating => _generating;
+  bool get loginLoading => _loginLoading;
   String? get selectedGenre => _selectedGenre;
   Track? get currentPlayingTrack => _currentPlayingTrack;
   Map<String, dynamic>? get announcement => _announcement;
@@ -65,6 +68,24 @@ class AppProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('user');
     notifyListeners();
+  }
+
+  /// Google 네이티브 로그인
+  Future<bool> loginWithGoogle() async {
+    _loginLoading = true;
+    notifyListeners();
+    try {
+      final user = await AuthService.loginWithGoogle();
+      if (user != null) {
+        await login(user);
+        _loginLoading = false;
+        notifyListeners();
+        return true;
+      }
+    } catch (_) {}
+    _loginLoading = false;
+    notifyListeners();
+    return false;
   }
 
   // --- Community Tracks ---
