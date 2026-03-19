@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'config/theme.dart';
+import 'providers/app_provider.dart';
 import 'screens/home/home_screen.dart';
 
 void main() {
@@ -12,11 +14,16 @@ class KMSApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: "Kenny's Music Studio",
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      home: const HomeScreen(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AppProvider()),
+      ],
+      child: MaterialApp(
+        title: "Kenny's Music Studio",
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.darkTheme,
+        home: const HomeScreen(),
+      ),
     );
   }
 }
