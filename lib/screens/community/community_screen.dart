@@ -129,19 +129,33 @@ class _CommunityScreenState extends State<CommunityScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
-                        (ctx, i) => TrackCard(
-                          track: tracks[i],
-                          onPlay: () {
-                            provider.playTrack(tracks[i]);
-                          },
-                          onLike: () => provider.likeTrack(tracks[i].id),
-                          onTap: () {
-                            provider.playTrack(tracks[i]);
-                            Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => PlayerScreen(track: tracks[i])),
-                            );
-                          },
-                        ),
+                        (ctx, i) {
+                          final t = tracks[i];
+                          final isMine = provider.currentUser != null &&
+                              t.ownerName == provider.currentUser!.name &&
+                              t.ownerProvider == provider.currentUser!.provider;
+                          return TrackCard(
+                            track: t,
+                            onPlay: () => provider.playTrack(t),
+                            onLike: () => provider.likeTrack(t.id),
+                            onDislike: () => provider.dislikeTrack(t.id),
+                            showDelete: isMine,
+                            onDelete: () async {
+                              final ok = await provider.deleteTrack(t.id);
+                              if (ok && context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('트랙이 삭제되었습니다'), backgroundColor: AppTheme.accent),
+                                );
+                              }
+                            },
+                            onTap: () {
+                              provider.playTrack(t);
+                              Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => PlayerScreen(track: t)),
+                              );
+                            },
+                          );
+                        },
                         childCount: tracks.length,
                       ),
                     ),

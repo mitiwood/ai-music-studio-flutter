@@ -4,6 +4,8 @@ import '../../config/theme.dart';
 import '../../providers/app_provider.dart';
 import 'simple_create_screen.dart';
 import 'custom_create_screen.dart';
+import 'youtube_create_screen.dart';
+import 'mv_create_screen.dart';
 import '../payment/payment_screen.dart';
 
 class CreateScreen extends StatelessWidget {
@@ -128,14 +130,10 @@ class CreateScreen extends StatelessWidget {
               title: 'YouTube 모드',
               desc: 'YouTube URL로 비슷한 곡 생성',
               color: AppTheme.green,
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('YouTube 모드는 준비 중입니다'),
-                    backgroundColor: AppTheme.accent,
-                  ),
-                );
-              },
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const YoutubeCreateScreen()),
+              ),
             ),
             const SizedBox(height: 12),
             _ModeCard(
@@ -143,14 +141,10 @@ class CreateScreen extends StatelessWidget {
               title: '뮤직비디오',
               desc: '음악에 맞는 영상 자동 생성',
               color: AppTheme.yellow,
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('뮤직비디오 모드는 준비 중입니다'),
-                    backgroundColor: AppTheme.accent,
-                  ),
-                );
-              },
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MvCreateScreen()),
+              ),
             ),
           ],
         ),

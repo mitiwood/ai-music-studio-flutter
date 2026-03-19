@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../config/constants.dart';
 import '../../config/theme.dart';
 import '../../models/user.dart';
 import '../../providers/app_provider.dart';
 import '../../widgets/track_card.dart';
+import '../admin/admin_screen.dart';
 import '../player/player_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -30,20 +30,12 @@ class ProfileScreen extends StatelessWidget {
 }
 
 class _LoginView extends StatelessWidget {
-  Future<void> _launchLogin(BuildContext context, String path) async {
-    final url = Uri.parse('${AppConstants.apiBaseUrl}$path');
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    }
-  }
-
-  Future<void> _handleGoogleLogin(BuildContext context) async {
-    final provider = context.read<AppProvider>();
-    final success = await provider.loginWithGoogle();
+  Future<void> _handleLogin(BuildContext context, Future<bool> Function() loginFn, String providerName) async {
+    final success = await loginFn();
     if (!success && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Google 로그인에 실패했습니다'),
+        SnackBar(
+          content: Text('$providerName 로그인에 실패했습니다'),
           backgroundColor: AppTheme.red,
         ),
       );
@@ -87,7 +79,7 @@ class _LoginView extends StatelessWidget {
                 icon: Icons.chat_bubble,
                 label: 'Naver로 로그인',
                 color: const Color(0xFF03C75A),
-                onTap: () => _launchLogin(context, AppConstants.authNaver),
+                onTap: () => _handleLogin(context, provider.loginWithNaver, 'Naver'),
               ),
               const SizedBox(height: 10),
               _LoginButton(
@@ -95,21 +87,20 @@ class _LoginView extends StatelessWidget {
                 label: 'Kakao로 로그인',
                 color: const Color(0xFFFEE500),
                 textColor: Colors.black,
-                onTap: () => _launchLogin(context, AppConstants.authKakao),
+                onTap: () => _handleLogin(context, provider.loginWithKakao, 'Kakao'),
               ),
               const SizedBox(height: 10),
               _LoginButton(
                 icon: Icons.g_mobiledata,
                 label: 'Google로 로그인',
                 color: const Color(0xFFEA4335),
-                onTap: () => _handleGoogleLogin(context),
+                onTap: () => _handleLogin(context, provider.loginWithGoogle, 'Google'),
               ),
               const SizedBox(height: 24),
-              // Guest continue
               TextButton(
                 onPressed: () {
-                  final provider = context.read<AppProvider>();
-                  provider.login(AppUser(
+                  final p = context.read<AppProvider>();
+                  p.login(AppUser(
                     name: '게스트',
                     provider: 'guest',
                   ));
@@ -258,6 +249,15 @@ class _LoggedInViewState extends State<_LoggedInView> {
                 ),
                 const Divider(color: AppTheme.border, height: 1),
                 _SettingsTile(
+                  icon: Icons.admin_panel_settings_outlined,
+                  title: '관리자',
+                  subtitle: '유저/트랙/댓글/공지 관리',
+                  onTap: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminScreen()));
+                  },
+                ),
+                const Divider(color: AppTheme.border, height: 1),
+                _SettingsTile(
                   icon: Icons.info_outline,
                   title: '앱 정보',
                   subtitle: AppConstants.appVersion,
@@ -312,6 +312,16 @@ class _LoggedInViewState extends State<_LoggedInView> {
                   track: track,
                   onPlay: () => widget.provider.playTrack(track),
                   onLike: () => widget.provider.likeTrack(track.id),
+                  onDislike: () => widget.provider.dislikeTrack(track.id),
+                  showDelete: true,
+                  onDelete: () async {
+                    final ok = await widget.provider.deleteTrack(track.id);
+                    if (ok && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('트랙이 삭제되었습니다'), backgroundColor: AppTheme.accent),
+                      );
+                    }
+                  },
                   onTap: () {
                     widget.provider.playTrack(track);
                     Navigator.of(context).push(

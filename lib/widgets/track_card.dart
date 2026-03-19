@@ -7,9 +7,21 @@ class TrackCard extends StatelessWidget {
   final Track track;
   final VoidCallback? onPlay;
   final VoidCallback? onLike;
+  final VoidCallback? onDislike;
+  final VoidCallback? onDelete;
   final VoidCallback? onTap;
+  final bool showDelete;
 
-  const TrackCard({super.key, required this.track, this.onPlay, this.onLike, this.onTap});
+  const TrackCard({
+    super.key,
+    required this.track,
+    this.onPlay,
+    this.onLike,
+    this.onDislike,
+    this.onDelete,
+    this.onTap,
+    this.showDelete = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -83,19 +95,52 @@ class TrackCard extends StatelessWidget {
               Row(children: [
                 _ActionBtn(icon: Icons.favorite, label: '${track.likes}', onTap: onLike, color: AppTheme.red),
                 const SizedBox(width: 12),
+                _ActionBtn(icon: Icons.thumb_down_outlined, label: '${track.dislikes}', onTap: onDislike, color: AppTheme.textTertiary),
+                const SizedBox(width: 12),
                 _ActionBtn(icon: Icons.play_arrow, label: '${track.plays}'),
                 const SizedBox(width: 12),
                 _ActionBtn(
                   icon: Icons.share_outlined,
                   label: '공유',
-                  onTap: () {
-                    ShareUtils.shareTrack(track);
-                  },
+                  onTap: () => ShareUtils.shareTrack(track),
                 ),
+                if (showDelete) ...[
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => _confirmDelete(context),
+                    child: const Icon(Icons.delete_outline, size: 18, color: AppTheme.red),
+                  ),
+                ],
               ]),
             ]),
           ),
         ]),
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('트랙 삭제', style: TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+        content: const Text('이 트랙을 삭제하시겠습니까?\n삭제 후 복구할 수 없습니다.',
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소', style: TextStyle(color: AppTheme.textTertiary)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onDelete?.call();
+            },
+            child: const Text('삭제', style: TextStyle(color: AppTheme.red, fontWeight: FontWeight.w700)),
+          ),
+        ],
       ),
     );
   }

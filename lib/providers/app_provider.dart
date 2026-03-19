@@ -8,6 +8,7 @@ import '../models/user.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/audio_service.dart';
+import '../services/cache_service.dart';
 
 class AppProvider extends ChangeNotifier {
   AppUser? _currentUser;
@@ -72,10 +73,24 @@ class AppProvider extends ChangeNotifier {
 
   /// Google 네이티브 로그인
   Future<bool> loginWithGoogle() async {
+    return _socialLogin(() => AuthService.loginWithGoogle());
+  }
+
+  /// Kakao 네이티브 로그인
+  Future<bool> loginWithKakao() async {
+    return _socialLogin(() => AuthService.loginWithKakao());
+  }
+
+  /// Naver 네이티브 로그인
+  Future<bool> loginWithNaver() async {
+    return _socialLogin(() => AuthService.loginWithNaver());
+  }
+
+  Future<bool> _socialLogin(Future<AppUser?> Function() loginFn) async {
     _loginLoading = true;
     notifyListeners();
     try {
-      final user = await AuthService.loginWithGoogle();
+      final user = await loginFn();
       if (user != null) {
         await login(user);
         _loginLoading = false;
@@ -88,13 +103,33 @@ class AppProvider extends ChangeNotifier {
     return false;
   }
 
-  // --- Community Tracks ---
+  // --- Community Tracks (with offline cache) ---
   Future<void> loadCommunityTracks() async {
     _tracksLoading = true;
     notifyListeners();
+
+    // 캐시 먼저 표시
+    if (_communityTracks.isEmpty) {
+      final cached = await CacheService.getCachedTracks();
+      if (cached.isNotEmpty) {
+        _communityTracks = cached;
+        _tracksLoading = false;
+        notifyListeners();
+      }
+    }
+
+    // 서버에서 최신 데이터 로드
     try {
-      _communityTracks = await ApiService.getCommunityTracks();
-    } catch (_) {}
+      final fresh = await ApiService.getCommunityTracks();
+      _communityTracks = fresh;
+      // 백그라운드 캐시 갱신
+      CacheService.cacheTracks(fresh);
+    } catch (_) {
+      // 오프라인: 캐시된 데이터 사용
+      if (_communityTracks.isEmpty) {
+        _communityTracks = await CacheService.getCachedTracks();
+      }
+    }
     _tracksLoading = false;
     notifyListeners();
   }
@@ -139,8 +174,52 @@ class AppProvider extends ChangeNotifier {
 
   // --- Track Actions ---
   Future<void> likeTrack(String trackId) async {
+    // 즉시 UI 반영
+    _updateTrackLocally(trackId, (t) => Track(
+      id: t.id, taskId: t.taskId, title: t.title, audioUrl: t.audioUrl,
+      videoUrl: t.videoUrl, imageUrl: t.imageUrl, tags: t.tags, lyrics: t.lyrics,
+      genMode: t.genMode, ownerName: t.ownerName, ownerAvatar: t.ownerAvatar,
+      ownerProvider: t.ownerProvider, isPublic: t.isPublic,
+      likes: t.likes + 1, dislikes: t.dislikes, plays: t.plays, created: t.created,
+    ));
     await ApiService.likeTrack(trackId);
-    await loadCommunityTracks();
+  }
+
+  Future<void> dislikeTrack(String trackId) async {
+    _updateTrackLocally(trackId, (t) => Track(
+      id: t.id, taskId: t.taskId, title: t.title, audioUrl: t.audioUrl,
+      videoUrl: t.videoUrl, imageUrl: t.imageUrl, tags: t.tags, lyrics: t.lyrics,
+      genMode: t.genMode, ownerName: t.ownerName, ownerAvatar: t.ownerAvatar,
+      ownerProvider: t.ownerProvider, isPublic: t.isPublic,
+      likes: t.likes, dislikes: t.dislikes + 1, plays: t.plays, created: t.created,
+    ));
+    await ApiService.dislikeTrack(trackId);
+  }
+
+  Future<bool> deleteTrack(String trackId) async {
+    final ok = await ApiService.deleteTrack(trackId);
+    if (ok) {
+      _communityTracks.removeWhere((t) => t.id == trackId);
+      _myTracks.removeWhere((t) => t.id == trackId);
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  void _updateTrackLocally(String trackId, Track Function(Track) updater) {
+    for (int i = 0; i < _communityTracks.length; i++) {
+      if (_communityTracks[i].id == trackId) {
+        _communityTracks[i] = updater(_communityTracks[i]);
+        break;
+      }
+    }
+    for (int i = 0; i < _myTracks.length; i++) {
+      if (_myTracks[i].id == trackId) {
+        _myTracks[i] = updater(_myTracks[i]);
+        break;
+      }
+    }
+    notifyListeners();
   }
 
   // --- Player ---
@@ -152,7 +231,16 @@ class AppProvider extends ChangeNotifier {
   Future<void> playTrack(Track track) async {
     _currentPlayingTrack = track;
     notifyListeners();
-    await audioService.play(track.audioUrl, trackId: track.id);
+
+    // 캐시된 오디오가 있으면 로컬 파일 재생
+    final cachedPath = await CacheService.getCachedAudioPath(track.id);
+    final url = cachedPath ?? track.audioUrl;
+    await audioService.play(url, trackId: track.id);
+
+    // 백그라운드에서 오디오 캐싱
+    if (cachedPath == null && track.audioUrl.isNotEmpty) {
+      CacheService.cacheAudio(track.id, track.audioUrl);
+    }
   }
 
   Future<void> stopPlayback() async {

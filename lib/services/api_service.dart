@@ -26,6 +26,66 @@ class ApiService {
     return r.statusCode == 200;
   }
 
+  /// 트랙 싫어요
+  static Future<bool> dislikeTrack(String trackId) async {
+    final r = await http.patch(
+      Uri.parse('$_base${AppConstants.apiTracks}?id=$trackId&action=dislike'),
+      headers: {'Content-Type': 'application/json'},
+    );
+    return r.statusCode == 200;
+  }
+
+  /// 트랙 삭제
+  static Future<bool> deleteTrack(String trackId) async {
+    final r = await http.delete(
+      Uri.parse('$_base${AppConstants.apiTracks}?id=$trackId'),
+      headers: {'Content-Type': 'application/json'},
+    );
+    return r.statusCode == 200;
+  }
+
+  /// 관리자 API - 전체 유저 조회
+  static Future<List<Map<String, dynamic>>> getUsers() async {
+    final r = await http.get(Uri.parse('$_base${AppConstants.apiUsers}'));
+    if (r.statusCode != 200) return [];
+    final d = jsonDecode(r.body);
+    return List<Map<String, dynamic>>.from(d['users'] ?? []);
+  }
+
+  /// 관리자 API - 전체 트랙 조회 (비공개 포함)
+  static Future<List<Track>> getAllTracks({int limit = 500}) async {
+    final r = await http.get(Uri.parse('$_base${AppConstants.apiTracks}?limit=$limit'));
+    if (r.statusCode != 200) return [];
+    final d = jsonDecode(r.body);
+    final list = d['tracks'] as List? ?? [];
+    return list.map((t) => Track.fromJson(t)).toList();
+  }
+
+  /// 트랙 공개/비공개 토글
+  static Future<bool> toggleTrackVisibility(String trackId, bool isPublic) async {
+    final r = await http.patch(
+      Uri.parse('$_base${AppConstants.apiTracks}?id=$trackId&action=${isPublic ? 'show' : 'hide'}'),
+      headers: {'Content-Type': 'application/json'},
+    );
+    return r.statusCode == 200;
+  }
+
+  /// 공지 발송
+  static Future<bool> sendAnnouncement({required String title, required String content}) async {
+    final r = await http.post(
+      Uri.parse('$_base${AppConstants.apiAnnouncement}'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'title': title, 'content': content}),
+    );
+    return r.statusCode == 200;
+  }
+
+  /// 공지 삭제
+  static Future<bool> deleteAnnouncement() async {
+    final r = await http.delete(Uri.parse('$_base${AppConstants.apiAnnouncement}'));
+    return r.statusCode == 200;
+  }
+
   /// 로그인 사용자 저장
   static Future<void> saveLoginUser(AppUser user) async {
     await http.post(
