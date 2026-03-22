@@ -1,18 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'config/theme.dart';
 import 'providers/app_provider.dart';
 import 'screens/home/home_screen.dart';
-import 'services/auth_service.dart';
-import 'services/push_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Kakao SDK 초기화
-  AuthService.initKakao();
-  // Firebase/FCM 초기화 (미설정 시 무시)
-  PushService.initialize();
-  runApp(const KMSApp());
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+  ));
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => AppProvider()..init(),
+      child: const KMSApp(),
+    ),
+  );
 }
 
 class KMSApp extends StatelessWidget {
@@ -20,16 +25,14 @@ class KMSApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AppProvider()),
-      ],
-      child: MaterialApp(
-        title: "Kenny's Music Studio",
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.darkTheme,
-        home: const HomeScreen(),
-      ),
+    final provider = context.watch<AppProvider>();
+    return MaterialApp(
+      title: "Kenny's Music Studio",
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: provider.themeMode,
+      home: const HomeScreen(),
     );
   }
 }

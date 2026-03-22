@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/theme.dart';
-import '../../models/track.dart';
 import '../../providers/app_provider.dart';
+import '../../models/track.dart';
 import '../../widgets/track_card.dart';
-import '../player/player_screen.dart';
 
 class CommunityScreen extends StatefulWidget {
   const CommunityScreen({super.key});
@@ -13,11 +12,8 @@ class CommunityScreen extends StatefulWidget {
 }
 
 class _CommunityScreenState extends State<CommunityScreen> {
-  final _genres = ['전체', 'pop', 'rock', 'hip-hop', 'r&b', 'electronic', 'ballad', 'k-pop', 'jazz', 'indie'];
-  final _genreLabels = {
-    '전체': '전체', 'pop': '팝', 'rock': '록', 'hip-hop': '힙합', 'r&b': 'R&B',
-    'electronic': '일렉', 'ballad': '발라드', 'k-pop': 'K-POP', 'jazz': '재즈', 'indie': '인디',
-  };
+  String _filter = 'all';
+  String _search = '';
 
   @override
   void initState() {
@@ -27,275 +23,137 @@ class _CommunityScreenState extends State<CommunityScreen> {
     });
   }
 
+  List<Track> _getFiltered(List<Track> tracks) {
+    var list = tracks;
+    if (_search.isNotEmpty) {
+      list = list.where((t) =>
+        t.title.toLowerCase().contains(_search.toLowerCase()) ||
+        (t.tags ?? '').toLowerCase().contains(_search.toLowerCase()) ||
+        t.ownerName.toLowerCase().contains(_search.toLowerCase())
+      ).toList();
+    }
+    if (_filter == 'popular') {
+      list = List.from(list)..sort((a, b) => b.likeCount.compareTo(a.likeCount));
+    }
+    if (_filter == 'recent') {
+      list = List.from(list)..sort((a, b) => (b.createdAt ?? DateTime(2000)).compareTo(a.createdAt ?? DateTime(2000)));
+    }
+    return list;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<AppProvider>();
+    final filtered = _getFiltered(provider.communityTracks);
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Kenny's Music Studio",
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => context.read<AppProvider>().loadCommunityTracks(),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: provider.loadCommunityTracks,
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  const Text('커뮤니티', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 10),
+                  TextField(
+                    onChanged: (v) => setState(() => _search = v),
+                    decoration: InputDecoration(
+                      hintText: '곡, 태그, 크리에이터 검색...',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      isDense: true, contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    _filterChip('전체', 'all'), const SizedBox(width: 6),
+                    _filterChip('인기', 'popular'), const SizedBox(width: 6),
+                    _filterChip('최신', 'recent'),
+                  ]),
+                ]),
+              )),
+              // Popular chart (top 5)
+              if (_filter == 'all' && _search.isEmpty)
+                SliverToBoxAdapter(child: _buildChart(provider.communityTracks)),
+              // Track list
+              provider.isLoading
+                ? const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
+                : SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    sliver: SliverList(delegate: SliverChildBuilderDelegate(
+                      (ctx, i) => TrackCard(
+                        track: filtered[i],
+                      ),
+                      childCount: filtered.length,
+                    )),
+                  ),
+              // Bottom padding for mini player
+              const SliverToBoxAdapter(child: SizedBox(height: 80)),
+            ],
           ),
-        ],
-      ),
-      body: Consumer<AppProvider>(
-        builder: (context, provider, _) {
-          if (provider.tracksLoading && provider.communityTracks.isEmpty) {
-            return const Center(child: CircularProgressIndicator(color: AppTheme.accent));
-          }
-
-          final tracks = provider.filteredTracks;
-          final hero = provider.heroTrack;
-
-          return RefreshIndicator(
-            color: AppTheme.accent,
-            onRefresh: () => provider.loadCommunityTracks(),
-            child: CustomScrollView(
-              slivers: [
-                // Hero track card
-                if (hero != null)
-                  SliverToBoxAdapter(
-                    child: _HeroTrackCard(
-                      track: hero,
-                      onPlay: () {
-                        provider.playTrack(hero);
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => PlayerScreen(track: hero)),
-                        );
-                      },
-                    ),
-                  ),
-                // Genre filter chips
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 44,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      itemCount: _genres.length,
-                      itemBuilder: (ctx, i) {
-                        final genre = _genres[i];
-                        final selected = (provider.selectedGenre ?? '전체') == genre;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: GestureDetector(
-                            onTap: () => provider.setGenreFilter(genre),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: selected ? AppTheme.accent : AppTheme.card,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: selected ? AppTheme.accent : AppTheme.border,
-                                ),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  _genreLabels[genre] ?? genre,
-                                  style: TextStyle(
-                                    color: selected ? Colors.white : AppTheme.textSecondary,
-                                    fontSize: 12,
-                                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                // Track list
-                if (tracks.isEmpty)
-                  SliverFillRemaining(
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.music_off, size: 48, color: AppTheme.textTertiary),
-                          const SizedBox(height: 12),
-                          Text('해당 장르의 음악이 없어요',
-                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (ctx, i) {
-                          final t = tracks[i];
-                          final isMine = provider.currentUser != null &&
-                              t.ownerName == provider.currentUser!.name &&
-                              t.ownerProvider == provider.currentUser!.provider;
-                          return TrackCard(
-                            track: t,
-                            onPlay: () => provider.playTrack(t),
-                            onLike: () => provider.likeTrack(t.id),
-                            onDislike: () => provider.dislikeTrack(t.id),
-                            showDelete: isMine,
-                            onDelete: () async {
-                              final ok = await provider.deleteTrack(t.id);
-                              if (ok && context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('트랙이 삭제되었습니다'), backgroundColor: AppTheme.accent),
-                                );
-                              }
-                            },
-                            onTap: () {
-                              provider.playTrack(t);
-                              Navigator.of(context).push(
-                                MaterialPageRoute(builder: (_) => PlayerScreen(track: t)),
-                              );
-                            },
-                          );
-                        },
-                        childCount: tracks.length,
-                      ),
-                    ),
-                  ),
-                // Bottom padding for mini player
-                const SliverToBoxAdapter(child: SizedBox(height: 80)),
-              ],
-            ),
-          );
-        },
+        ),
       ),
     );
   }
-}
 
-class _HeroTrackCard extends StatelessWidget {
-  final Track track;
-  final VoidCallback onPlay;
-
-  const _HeroTrackCard({required this.track, required this.onPlay});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: const LinearGradient(
-          colors: [AppTheme.accent2, AppTheme.accent],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+  Widget _filterChip(String label, String value) {
+    final active = _filter == value;
+    return GestureDetector(
+      onTap: () => setState(() => _filter = value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          gradient: active ? AppTheme.primaryGradient : null,
+          color: active ? null : AppTheme.bg3,
+          borderRadius: BorderRadius.circular(20),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.accent.withValues(alpha: 0.3),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: active ? Colors.white : AppTheme.t3)),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Stack(
-          children: [
-            if (track.imageUrl.isNotEmpty)
-              Positioned.fill(
-                child: Opacity(
-                  opacity: 0.25,
-                  child: Image.network(track.imageUrl, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox()),
-                ),
+    );
+  }
+
+  Widget _buildChart(List<Track> tracks) {
+    final sorted = List<Track>.from(tracks)..sort((a, b) => b.likeCount.compareTo(a.likeCount));
+    final top = sorted.take(5).toList();
+    if (top.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [AppTheme.yellow.withOpacity(0.06), AppTheme.primary.withOpacity(0.04)]),
+        border: Border.all(color: AppTheme.yellow.withOpacity(0.15)),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.emoji_events, size: 16, color: AppTheme.yellow),
+            const SizedBox(width: 6),
+            const Text('인기 차트', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppTheme.yellow)),
+          ]),
+          const SizedBox(height: 10),
+          ...top.asMap().entries.map((e) {
+            final i = e.key;
+            final t = e.value;
+            return GestureDetector(
+              onTap: () => context.read<AppProvider>().playTrack(t),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(children: [
+                  SizedBox(width: 24, child: Text('${i + 1}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: i < 3 ? AppTheme.yellow : AppTheme.t3))),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(t.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+                  Icon(Icons.favorite, size: 11, color: AppTheme.t3),
+                  const SizedBox(width: 3),
+                  Text('${t.likeCount}', style: const TextStyle(fontSize: 11, color: AppTheme.t3)),
+                ]),
               ),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  // Art
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      color: Colors.black26,
-                      image: track.imageUrl.isNotEmpty
-                          ? DecorationImage(
-                              image: NetworkImage(track.imageUrl),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                    ),
-                    child: track.imageUrl.isEmpty
-                        ? const Center(child: Icon(Icons.music_note, color: Colors.white54, size: 32))
-                        : null,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.white24,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text(
-                            'HOT',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          track.title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          track.ownerName,
-                          style: const TextStyle(color: Colors.white70, fontSize: 12),
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            const Icon(Icons.favorite, size: 14, color: Colors.white70),
-                            const SizedBox(width: 4),
-                            Text('${track.likes}',
-                                style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                            const SizedBox(width: 12),
-                            const Icon(Icons.play_arrow, size: 14, color: Colors.white70),
-                            const SizedBox(width: 4),
-                            Text('${track.plays}',
-                                style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: onPlay,
-                    child: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: const BoxDecoration(
-                        color: Colors.white24,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.play_arrow, color: Colors.white, size: 28),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+            );
+          }),
+        ],
       ),
     );
   }

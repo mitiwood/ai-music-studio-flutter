@@ -1,312 +1,153 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
-import '../config/constants.dart';
-import '../models/track.dart';
+import 'dart:convert';
 import '../models/user.dart';
+import '../models/track.dart';
 import '../services/api_service.dart';
-import '../services/auth_service.dart';
 import '../services/audio_service.dart';
-import '../services/cache_service.dart';
 
 class AppProvider extends ChangeNotifier {
-  AppUser? _currentUser;
+  AppUser? _user;
   List<Track> _communityTracks = [];
   List<Track> _myTracks = [];
-  bool _tracksLoading = false;
-  bool _myTracksLoading = false;
-  bool _generating = false;
-  bool _loginLoading = false;
-  String? _selectedGenre;
-  Track? _currentPlayingTrack;
-  Map<String, dynamic>? _announcement;
+  List<Track> _history = [];
+  bool _isLoading = false;
+  int _currentTab = 0;
+  ThemeMode _themeMode = ThemeMode.dark;
+  Map<String, dynamic>? _attendance;
+  Map<String, dynamic>? _tossConfig;
+  final AudioPlayerService _audio = AudioPlayerService();
 
-  final AudioService audioService = AudioService();
-
-  // Getters
-  AppUser? get currentUser => _currentUser;
+  AppUser? get user => _user;
   List<Track> get communityTracks => _communityTracks;
   List<Track> get myTracks => _myTracks;
-  bool get tracksLoading => _tracksLoading;
-  bool get myTracksLoading => _myTracksLoading;
-  bool get generating => _generating;
-  bool get loginLoading => _loginLoading;
-  String? get selectedGenre => _selectedGenre;
-  Track? get currentPlayingTrack => _currentPlayingTrack;
-  Map<String, dynamic>? get announcement => _announcement;
-  bool get isLoggedIn => _currentUser != null && _currentUser!.isLoggedIn;
-  int get credits => _currentUser?.credits ?? 2;
+  List<Track> get history => _history;
+  bool get isLoading => _isLoading;
+  int get currentTab => _currentTab;
+  ThemeMode get themeMode => _themeMode;
+  Map<String, dynamic>? get attendance => _attendance;
+  Map<String, dynamic>? get tossConfig => _tossConfig;
+  AudioPlayerService get audio => _audio;
+  bool get isLoggedIn => _user != null && !_user!.isGuest;
 
-  AppProvider() {
-    _loadSavedUser();
-  }
-
-  // --- Auth ---
-  Future<void> _loadSavedUser() async {
+  // ── Init ──
+  Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final userJson = prefs.getString('user');
+    final userJson = prefs.getString('kms_user');
     if (userJson != null) {
-      try {
-        _currentUser = AppUser.fromJson(jsonDecode(userJson));
-        notifyListeners();
-      } catch (_) {}
+      _user = AppUser.fromJson(jsonDecode(userJson));
     }
+    final theme = prefs.getString('kms_theme') ?? 'dark';
+    _themeMode = theme == 'light' ? ThemeMode.light : ThemeMode.dark;
+    // Load history from local storage
+    final histJson = prefs.getString('kms_history');
+    if (histJson != null) {
+      final list = jsonDecode(histJson) as List;
+      _history = list.map<Track>((j) => Track.fromJson(j)).toList();
+    }
+    notifyListeners();
+    // Background loads
+    loadCommunityTracks();
+    loadTossConfig();
+    if (isLoggedIn) loadAttendance();
   }
 
-  Future<void> login(AppUser user) async {
-    _currentUser = user;
+  // ── Auth ──
+  Future<void> setUser(AppUser user) async {
+    _user = user;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user', jsonEncode(user.toJson()));
-    await ApiService.saveLoginUser(user);
+    await prefs.setString('kms_user', jsonEncode(user.toJson()));
     notifyListeners();
-    loadMyTracks();
+    loadAttendance();
   }
 
   Future<void> logout() async {
-    _currentUser = null;
-    _myTracks = [];
+    _user = null;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('user');
+    await prefs.remove('kms_user');
     notifyListeners();
   }
 
-  /// Google 네이티브 로그인
-  Future<bool> loginWithGoogle() async {
-    return _socialLogin(() => AuthService.loginWithGoogle());
-  }
-
-  /// Kakao 네이티브 로그인
-  Future<bool> loginWithKakao() async {
-    return _socialLogin(() => AuthService.loginWithKakao());
-  }
-
-  /// Naver 네이티브 로그인
-  Future<bool> loginWithNaver() async {
-    return _socialLogin(() => AuthService.loginWithNaver());
-  }
-
-  Future<bool> _socialLogin(Future<AppUser?> Function() loginFn) async {
-    _loginLoading = true;
+  // ── Theme ──
+  Future<void> toggleTheme() async {
+    _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('kms_theme', _themeMode == ThemeMode.light ? 'light' : 'dark');
     notifyListeners();
-    try {
-      final user = await loginFn();
-      if (user != null) {
-        await login(user);
-        _loginLoading = false;
-        notifyListeners();
-        return true;
-      }
-    } catch (_) {}
-    _loginLoading = false;
-    notifyListeners();
-    return false;
   }
 
-  // --- Community Tracks (with offline cache) ---
+  // ── Tab ──
+  void setTab(int index) { _currentTab = index; notifyListeners(); }
+
+  // ── Community Tracks ──
   Future<void> loadCommunityTracks() async {
-    _tracksLoading = true;
-    notifyListeners();
-
-    // 캐시 먼저 표시
-    if (_communityTracks.isEmpty) {
-      final cached = await CacheService.getCachedTracks();
-      if (cached.isNotEmpty) {
-        _communityTracks = cached;
-        _tracksLoading = false;
-        notifyListeners();
-      }
-    }
-
-    // 서버에서 최신 데이터 로드
     try {
-      final fresh = await ApiService.getCommunityTracks();
-      _communityTracks = fresh;
-      // 백그라운드 캐시 갱신
-      CacheService.cacheTracks(fresh);
-    } catch (_) {
-      // 오프라인: 캐시된 데이터 사용
-      if (_communityTracks.isEmpty) {
-        _communityTracks = await CacheService.getCachedTracks();
-      }
-    }
-    _tracksLoading = false;
-    notifyListeners();
-  }
-
-  List<Track> get filteredTracks {
-    if (_selectedGenre == null || _selectedGenre == '전체') {
-      return _communityTracks;
-    }
-    return _communityTracks
-        .where((t) => t.tags.toLowerCase().contains(_selectedGenre!.toLowerCase()))
-        .toList();
-  }
-
-  Track? get heroTrack {
-    if (_communityTracks.isEmpty) return null;
-    final sorted = List<Track>.from(_communityTracks)
-      ..sort((a, b) => b.likes.compareTo(a.likes));
-    return sorted.first;
-  }
-
-  void setGenreFilter(String? genre) {
-    _selectedGenre = genre;
-    notifyListeners();
-  }
-
-  // --- My Tracks ---
-  Future<void> loadMyTracks() async {
-    if (_currentUser == null || !isLoggedIn) return;
-    _myTracksLoading = true;
-    notifyListeners();
-    try {
-      final allTracks = await ApiService.getCommunityTracks(limit: 500);
-      _myTracks = allTracks
-          .where((t) =>
-              t.ownerName == _currentUser!.name &&
-              t.ownerProvider == _currentUser!.provider)
-          .toList();
-    } catch (_) {}
-    _myTracksLoading = false;
-    notifyListeners();
-  }
-
-  // --- Track Actions ---
-  Future<void> likeTrack(String trackId) async {
-    // 즉시 UI 반영
-    _updateTrackLocally(trackId, (t) => Track(
-      id: t.id, taskId: t.taskId, title: t.title, audioUrl: t.audioUrl,
-      videoUrl: t.videoUrl, imageUrl: t.imageUrl, tags: t.tags, lyrics: t.lyrics,
-      genMode: t.genMode, ownerName: t.ownerName, ownerAvatar: t.ownerAvatar,
-      ownerProvider: t.ownerProvider, isPublic: t.isPublic,
-      likes: t.likes + 1, dislikes: t.dislikes, plays: t.plays, created: t.created,
-    ));
-    await ApiService.likeTrack(trackId);
-  }
-
-  Future<void> dislikeTrack(String trackId) async {
-    _updateTrackLocally(trackId, (t) => Track(
-      id: t.id, taskId: t.taskId, title: t.title, audioUrl: t.audioUrl,
-      videoUrl: t.videoUrl, imageUrl: t.imageUrl, tags: t.tags, lyrics: t.lyrics,
-      genMode: t.genMode, ownerName: t.ownerName, ownerAvatar: t.ownerAvatar,
-      ownerProvider: t.ownerProvider, isPublic: t.isPublic,
-      likes: t.likes, dislikes: t.dislikes + 1, plays: t.plays, created: t.created,
-    ));
-    await ApiService.dislikeTrack(trackId);
-  }
-
-  Future<bool> deleteTrack(String trackId) async {
-    final ok = await ApiService.deleteTrack(trackId);
-    if (ok) {
-      _communityTracks.removeWhere((t) => t.id == trackId);
-      _myTracks.removeWhere((t) => t.id == trackId);
+      _communityTracks = await ApiService.getTracks(publicOnly: true);
+      _communityTracks.sort((a, b) => (b.createdAt ?? DateTime(2000)).compareTo(a.createdAt ?? DateTime(2000)));
       notifyListeners();
-    }
-    return ok;
+    } catch (e) { debugPrint('[loadCommunity] $e'); }
   }
 
-  void _updateTrackLocally(String trackId, Track Function(Track) updater) {
-    for (int i = 0; i < _communityTracks.length; i++) {
-      if (_communityTracks[i].id == trackId) {
-        _communityTracks[i] = updater(_communityTracks[i]);
-        break;
-      }
-    }
-    for (int i = 0; i < _myTracks.length; i++) {
-      if (_myTracks[i].id == trackId) {
-        _myTracks[i] = updater(_myTracks[i]);
-        break;
-      }
-    }
-    notifyListeners();
-  }
-
-  // --- Player ---
-  void setCurrentPlayingTrack(Track? track) {
-    _currentPlayingTrack = track;
-    notifyListeners();
-  }
-
-  Future<void> playTrack(Track track) async {
-    _currentPlayingTrack = track;
-    notifyListeners();
-
-    // 캐시된 오디오가 있으면 로컬 파일 재생
-    final cachedPath = await CacheService.getCachedAudioPath(track.id);
-    final url = cachedPath ?? track.audioUrl;
-    await audioService.play(url, trackId: track.id);
-
-    // 백그라운드에서 오디오 캐싱
-    if (cachedPath == null && track.audioUrl.isNotEmpty) {
-      CacheService.cacheAudio(track.id, track.audioUrl);
-    }
-  }
-
-  Future<void> stopPlayback() async {
-    await audioService.stop();
-    _currentPlayingTrack = null;
-    notifyListeners();
-  }
-
-  // --- Generate ---
-  Future<Track?> generateTrack({
-    required String title,
-    String? lyrics,
-    String genre = 'pop',
-    String mood = 'upbeat',
-    int bpm = 120,
-    bool vocal = true,
-    String mode = 'custom',
-  }) async {
-    _generating = true;
-    notifyListeners();
-
+  // ── My Tracks ──
+  Future<void> loadMyTracks() async {
+    if (_user == null) return;
     try {
-      final body = {
-        'title': title,
-        'gen_mode': mode,
-        'genre': genre,
-        'mood': mood,
-        'bpm': bpm,
-        'vocal': vocal,
-        if (lyrics != null && lyrics.isNotEmpty) 'lyrics': lyrics,
-        'owner_name': _currentUser?.name ?? '익명',
-        'owner_provider': _currentUser?.provider ?? 'guest',
-        'owner_avatar': _currentUser?.avatar ?? '',
-      };
+      final all = await ApiService.getTracks(publicOnly: false);
+      _myTracks = all.where((t) => t.ownerName == _user!.name && t.ownerProvider == _user!.provider).toList();
+      _myTracks.sort((a, b) => (b.createdAt ?? DateTime(2000)).compareTo(a.createdAt ?? DateTime(2000)));
+      notifyListeners();
+    } catch (e) { debugPrint('[loadMyTracks] $e'); }
+  }
 
-      final r = await http.post(
-        Uri.parse('${AppConstants.apiBaseUrl}${AppConstants.apiKieProxy}'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
+  // ── History ──
+  Future<void> addToHistory(Track track) async {
+    _history.removeWhere((t) => t.id == track.id);
+    _history.insert(0, track);
+    if (_history.length > 200) _history = _history.sublist(0, 200);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('kms_history', jsonEncode(_history.map((t) => t.toJson()).toList()));
+    notifyListeners();
+  }
 
-      if (r.statusCode == 200) {
-        final data = jsonDecode(r.body);
-        if (data['track'] != null) {
-          final track = Track.fromJson(data['track']);
-          _generating = false;
-          notifyListeners();
-          await loadCommunityTracks();
-          return track;
-        }
-      }
+  // ── Player ──
+  Future<void> playTrack(Track track) async {
+    if (track.audioUrl == null || track.audioUrl!.isEmpty) return;
+    await _audio.play(track.audioUrl!, trackId: track.id, title: track.title, imageUrl: track.imageUrl);
+    addToHistory(track);
+    notifyListeners();
+  }
+
+  // ── Like ──
+  Future<void> toggleLike(Track track) async {
+    if (_user == null) return;
+    final newLiked = !track.liked;
+    track.liked = newLiked;
+    if (newLiked) track.disliked = false;
+    notifyListeners();
+    await ApiService.likeTrack(track.id, _user!.name, _user!.provider, type: newLiked ? 'like' : 'unlike');
+  }
+
+  // ── Attendance ──
+  Future<void> loadAttendance() async {
+    if (_user == null || _user!.isGuest) return;
+    try {
+      _attendance = await ApiService.getAttendance(_user!.name, _user!.provider);
+      notifyListeners();
     } catch (_) {}
-
-    _generating = false;
-    notifyListeners();
-    return null;
   }
 
-  // --- Announcement ---
-  Future<void> checkAnnouncement() async {
-    _announcement = await ApiService.getAnnouncement();
-    notifyListeners();
+  Future<Map<String, dynamic>> doCheckIn() async {
+    if (_user == null) return {'ok': false};
+    final result = await ApiService.checkIn(_user!.name, _user!.provider);
+    if (result['ok'] == true) await loadAttendance();
+    return result;
   }
 
-  void dismissAnnouncement() {
-    _announcement = null;
-    notifyListeners();
+  // ── Toss Config ──
+  Future<void> loadTossConfig() async {
+    try {
+      _tossConfig = await ApiService.getTossConfig();
+      notifyListeners();
+    } catch (_) {}
   }
 }
