@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-android:
-    name: 🤖 Android APK
+    name: "\U0001F916 Android APK"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +24,9 @@ jobs:
 
       - name: Get dependencies
         run: flutter pub get
+
+      - name: Analyze code
+        run: flutter analyze --no-fatal-infos || true
 
       - name: Build APK
         run: flutter build apk --release
@@ -44,7 +47,7 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
 
   build-ios:
-    name: 🍎 iOS IPA
+    name: "\U0001F34E iOS IPA"
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +77,7 @@ jobs:
           path: KMS-unsigned.ipa
 
   notify:
-    name: 📢 빌드 알림
+    name: "\U0001F4E2 빌드 알림"
     needs: [build-android, build-ios]
     runs-on: ubuntu-latest
     if: always()
@@ -82,6 +85,8 @@ jobs:
       - name: Send download links
         env:
           RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
           ANDROID_OK: ${{ needs.build-android.result }}
           IOS_OK: ${{ needs.build-ios.result }}
         run: |
@@ -89,15 +94,25 @@ jobs:
           import urllib.request, json, os
 
           run_id = os.environ.get('RUN_ID', '')
+          repo = os.environ.get('REPO', '')
+          sha = os.environ.get('SHA', '')[:7]
           android = '✅' if os.environ.get('ANDROID_OK') == 'success' else '❌'
           ios = '✅' if os.environ.get('IOS_OK') == 'success' else '❌'
 
           base = f'https://nightly.link/mitiwood/ai-music-studio-flutter/actions/runs/{run_id}'
 
           msg = (
-            f'📱 Flutter 빌드 완료!\n\n'
+            f'📱 KMS Flutter v2.1 빌드 완료!\n'
+            f'커밋: {sha}\n\n'
             f'{android} Android APK:\n{base}/android-apk.zip\n\n'
-            f'{ios} iOS IPA:\n{base}/ios-ipa.zip'
+            f'{ios} iOS IPA:\n{base}/ios-ipa.zip\n\n'
+            f'🆕 v2.1 변경사항:\n'
+            f'- 네이티브 다운로드/공유 강화\n'
+            f'- 백그라운드 오디오 유지\n'
+            f'- 딥링크 지원\n'
+            f'- 로컬 알림 (생성 완료/다운로드)\n'
+            f'- 향상된 스플래시 화면\n'
+            f'- 오프라인 감지 개선'
           )
 
           site = 'https://ai-music-studio-bice.vercel.app'
